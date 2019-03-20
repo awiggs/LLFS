@@ -1,5 +1,5 @@
-# Little Log File System
-## UVic CSC 360, Spring 2019
+Little Log File System
+UVic CSC 360, Spring 2019
 
 
 Link for Bit Map functions:
