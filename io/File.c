@@ -57,7 +57,18 @@ int init_llfs(char *llfs_path, int num_blocks)
 
 	// Create block vector mapping
 	// Helper files found in separate header
-	int free_blocks[128]; // 512 bytes, int = 4 bytes, a[i] = 32 bit flags	
+	int free_blocks[128]; // 512 bytes, int = 4 bytes, a[i] = 32 bit flags
+
+	// Fill free blocks
+	// 0 = unavailable, 1 = available
+	int i;
+	for (i = 0; i < 4096; i++) {
+		if (i < 10) {
+			ClearBit(free_blocks, i);
+		} else {
+			SetBit(free_blocks, i);
+		}
+	}
 
 	// Create inodes
 		
@@ -65,6 +76,8 @@ int init_llfs(char *llfs_path, int num_blocks)
 	// Create empty data blocks
 
 	fwrite(sb, 1, sizeof(superblock), vdisk);
+
+	fwrite(free_blocks, 1, sizeof(free_blocks), vdisk);
 
 
 	// Clean up
