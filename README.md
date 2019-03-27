@@ -3,6 +3,8 @@
 
 This directory is for the CSC 360 Assignment of a Little Log File System.
 
+Also it's not actually LFS :)
+
 
 Resources:\
 Link for Bit Map functions:
