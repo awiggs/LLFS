@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "FS.h"
 
 /*****************************************************/
@@ -12,7 +13,7 @@
 int open_fs(char *fs_path)
 {
 	// Open vdisk
-	vdisk = fopen(fs_path, "w+");
+	vdisk = fopen(fs_path, "r+");
 
 	if (vdisk == NULL) {
 		fprintf(stderr, "Error opening file system!\n");
@@ -33,6 +34,88 @@ void close_fs(void)
 	} else {
 		fprintf(stderr, "File system could not be closed!\n");
 	}
+}
+
+inode* get_inode(int inode_num)
+{
+	inode* ret;
+	int block_number, block_offset, inode_offset;
+	char buffer[BLOCK_SIZE];
+
+	// Ensure requested inode number is valid
+	if (inode_num >= MAX_FILES) {
+		printf("Requested invalid inode -- returning NULL\n");
+		return NULL;
+	}
+
+	// Open the disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return NULL;
+	}
+
+	// Get block number that contains desired inode
+	block_number = 3 + (inode_num / (BLOCK_SIZE / INODE_SIZE));
+	block_offset = (block_number * BLOCK_SIZE); // + ((block_number - 1) * BLOCK_SIZE);
+	
+	// Move cursor to top of inode block
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Read block containing inode into buffer
+	fread(buffer, BLOCK_SIZE, 1, vdisk);
+
+	// Calculate inode offset
+	inode_offset = inode_num % (BLOCK_SIZE / INODE_SIZE);
+
+	// Create a return inode
+	ret = (inode *)malloc(INODE_SIZE);
+
+	// Grab bytes from disk
+	memcpy(ret, &buffer[inode_offset * INODE_SIZE], INODE_SIZE);	
+
+	// Close the disk
+	close_fs();
+
+	printf("Returned inode number: %d\n", ret->inode_num);
+	
+	return ret;
+}
+
+int write_inode(inode* node)
+{
+	int inode_num, ;
+
+	// Get inode num to write back to disk
+	inode_num = node->inode_num;
+
+	// Open the disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return NULL;
+	}
+
+	// Get block number to write inode back to
+	block_number
+
+
+	return 0;
+}
+
+int write_fs()
+{
+	return 0;
+}
+
+int read_fs()
+{
+	return 0;
+}
+
+int init_root()
+{
+	inode *root_inode = get_inode(0);
+	root_inode->filesize = 1;
+	root_inode->directory_flag = 1;
+
+	return 0;
 }
 
 int init_fs(char *fs_path, int num_blocks)
@@ -84,13 +167,13 @@ int init_fs(char *fs_path, int num_blocks)
 	// Write the superblock and free block map to disk
 	fwrite(sb, 1, sizeof(superblock), vdisk);
 	fwrite(free_blocks, 1, sizeof(free_blocks), vdisk);
+	fwrite(inode_map, 1, sizeof(inode_map), vdisk);
 
 	// Create inode blocks with inodes
 	int j;
 	for (j = 0; j < 112; j++) {
 		// Create inode block
-		inode* node;
-		node = malloc(INODE_SIZE);
+		inode* node = (inode *)malloc(INODE_SIZE);
 
 		// Fill inode with default info
 		node->inode_num = j;
@@ -99,25 +182,15 @@ int init_fs(char *fs_path, int num_blocks)
 		
 		// Write inode block to disk
 		fwrite(node, 1, INODE_SIZE, vdisk);
+
+		// Free inode memory
+		free(node);
 	}
-	
-	// Write the inode map to disk
-	fwrite(inode_map, 1, sizeof(inode_map), vdisk);
 
 	// Clean up
 	free(sb);
 	fclose(vdisk);
 	printf("Formatted disk. Exiting.\n");
-	return 0;
-}
-
-int write_fs()
-{
-	return 0;
-}
-
-int read_fs()
-{
 	return 0;
 }
 
@@ -141,6 +214,8 @@ int main()
 	if (start == 1) {
 		fprintf(stderr, "Error starting file system!\n");
 	}
+
+	init_root();
 
 	// Open vdisk for use
 //	open_fs(FS_PATH);

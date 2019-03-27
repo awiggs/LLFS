@@ -85,7 +85,7 @@ typedef struct direntry {
 	char name[12];
 
 	// inode num
-	int inum;
+	int inode_num;
 } direntry;
 
 /*********************************************/
