@@ -1,18 +1,18 @@
-// LLFS Assignment, CSC 360
+// FS Assignment, CSC 360
 // Andrew Wiggins, V00817291
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "LLFS.h"
+#include "FS.h"
 
 /*****************************************************/
 
 // Functions
 
-int open_llfs(char *llfs_path)
+int open_fs(char *fs_path)
 {
 	// Open vdisk
-	vdisk = fopen(llfs_path, "w+");
+	vdisk = fopen(fs_path, "w+");
 
 	if (vdisk == NULL) {
 		fprintf(stderr, "Error opening file system!\n");
@@ -23,7 +23,7 @@ int open_llfs(char *llfs_path)
 
 }
 
-void close_llfs(void)
+void close_fs(void)
 {
 	// Close vdisk
 	int retval = fclose(vdisk);
@@ -35,13 +35,13 @@ void close_llfs(void)
 	}
 }
 
-int init_llfs(char *llfs_path, int num_blocks)
+int init_fs(char *fs_path, int num_blocks)
 {
 	printf("Formatting disk...\n");
 	superblock *sb;
 
 	// Open disk
-	vdisk = fopen(llfs_path, "w+");
+	vdisk = fopen(fs_path, "wb+");
 
 	if (vdisk == NULL) {
 		fprintf(stderr, "Error opening initial vdisk!\n");
@@ -52,17 +52,28 @@ int init_llfs(char *llfs_path, int num_blocks)
 	sb = (superblock *)malloc(sizeof(superblock));
 	sb->magic = MAGIC_NUM;
 	sb->block_count = num_blocks;
-//	sb->max_files = MAX_FILES;
+	sb->max_files = MAX_FILES;
+	sb->first_free_inode = 0;
+	sb->first_free_block = 11;
 	sb->current_files = 0;
 
 	// Create block vector mapping
 	// Helper files found in separate header
 	int free_blocks[128]; // 512 bytes, int = 4 bytes, a[i] = 32 bit flags
+	int inode_map[128];
 
 	// Fill free blocks
 	// 0 = unavailable, 1 = available
 	int i;
 	for (i = 0; i < 4096; i++) {
+		// Fill inode map with 1s
+		if (i < 112) {
+			SetBit(inode_map, i);
+		} else {
+			ClearBit(inode_map, i);
+		}
+
+		// First 10 blocks aren't available
 		if (i < 10) {
 			ClearBit(free_blocks, i);
 		} else {
@@ -70,15 +81,28 @@ int init_llfs(char *llfs_path, int num_blocks)
 		}
 	}
 
-	// Create inodes
-		
-
-	// Create empty data blocks
-
+	// Write the superblock and free block map to disk
 	fwrite(sb, 1, sizeof(superblock), vdisk);
-
 	fwrite(free_blocks, 1, sizeof(free_blocks), vdisk);
 
+	// Create inode blocks with inodes
+	int j;
+	for (j = 0; j < 112; j++) {
+		// Create inode block
+		inode* node;
+		node = malloc(INODE_SIZE);
+
+		// Fill inode with default info
+		node->inode_num = j;
+		node->filesize = 0;
+		node->directory_flag = 0;
+		
+		// Write inode block to disk
+		fwrite(node, 1, INODE_SIZE, vdisk);
+	}
+	
+	// Write the inode map to disk
+	fwrite(inode_map, 1, sizeof(inode_map), vdisk);
 
 	// Clean up
 	free(sb);
@@ -87,9 +111,19 @@ int init_llfs(char *llfs_path, int num_blocks)
 	return 0;
 }
 
+int write_fs()
+{
+	return 0;
+}
+
+int read_fs()
+{
+	return 0;
+}
+
 /*****************************************************/
 
-int test_llfs()
+int test_fs()
 {
 	// Use this for testing the file system
 	return 0;
@@ -99,23 +133,23 @@ int test_llfs()
 
 int main()
 {
-	char *LLFS_PATH = VDISK_PATH;
+	char *FS_PATH = VDISK_PATH;
 
 	// Initialize vdisk
-	int start = init_llfs(LLFS_PATH, NUM_BLOCKS);
+	int start = init_fs(FS_PATH, NUM_BLOCKS);
 
 	if (start == 1) {
 		fprintf(stderr, "Error starting file system!\n");
 	}
 
 	// Open vdisk for use
-//	open_llfs(LLFS_PATH);
+//	open_fs(FS_PATH);
 
 	// Do stuff
-//	test_llfs();
+//	test_fs();
 
 	// Close vdisk
-//	close_llfs();
+//	close_fs();
 
 	return 0;
 }

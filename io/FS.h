@@ -1,4 +1,4 @@
-// LLFS Assignment, CSC 360
+// FS Assignment, CSC 360
 // Andrew Wiggins, V00817291
 
 #include <stdio.h>
@@ -6,23 +6,23 @@
 
 /*****************************************************/
 
-// LLFS Globals and Defines
+// FS Globals and Defines
 
 #define NUM_BLOCKS 4096
 #define BLOCK_SIZE 512 // bytes
 #define INODE_SIZE 32  // bytes
 #define DIRENTRY_SIZE 16 // bytes
 #define MAGIC_NUM 0x2f8c8075
-#define MAX_FILES 1000 // CHANGE THIS LATER
+#define MAX_FILES 112 // based on 7 blocks of inodes
 #define VDISK_PATH "../disk/vdisk"
 
 FILE *vdisk; // used for opening vdisk
 
 /*****************************************************/
 
-// LLFS Structs
+// FS Structs
 
-typedef struct llfs_sb {
+typedef struct fs_sb {
 	// Magic number
 	int magic;
 
@@ -48,33 +48,29 @@ typedef struct llfs_sb {
 	int first_free_inode;
 
 	// Pointer to first free data block
-	int first_data_block;
+	int first_free_block;
 
 	// Padding to make superblock 512 bytes
 	char padding[BLOCK_SIZE - (sizeof(int) * 9)];
 } superblock;
 
-typedef struct llfs_inode {
+typedef struct fs_inode {
 	// inode num
 	int inode_num;
 
 	// Directory flag, 0 -> file, 1 -> dir
-	int directory_flag;
-
-	// Pointers to next nodes
-	int next_free;
-	int prev_free;
+	short directory_flag;
 
 	// Size of inode file
 	int filesize;
 
 	// Pointers to data blocks
-	int block_pointers[10];
-	int indirect_pointer;
-	int dbl_indirect_pointer;
+	short block_pointers[10];
+	short indirect_pointer;
+
 } inode;
 
-typedef struct llfs_db {
+typedef struct fs_db {
 	// Pointers to next blocks
 	int next_free;
 	int prev_free;
