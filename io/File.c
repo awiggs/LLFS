@@ -36,6 +36,116 @@ void close_fs(void)
 	}
 }
 
+superblock* get_superblock()
+{
+	int block_offset;
+	superblock* sb;
+
+	// Set up superblock struct
+	sb = (superblock *)malloc(BLOCK_SIZE);
+
+	// Open the disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return NULL;
+	}
+
+	// Superblock is always the first block
+	block_offset = 0;
+
+	// Move cursor to top of superblock
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Read superblock from disk
+	fread(sb, BLOCK_SIZE, 1, vdisk);
+
+	// Close the disk
+	close_fs();
+
+	return sb;
+}
+
+int write_superblock(superblock* sb)
+{
+	int block_offset;
+
+	// Open the disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return 1;
+	}
+
+	// Superblock is always the first block
+	block_offset = 0;
+
+	// Move cursor to top of superblock
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Write superblock to disk
+	fwrite(sb, BLOCK_SIZE, 1, vdisk);
+
+	// Clean up
+	free(sb);
+	close_fs();
+
+	return 0;
+}
+
+int* get_free_blocks()
+{
+	int block_offset;
+
+	// Set up array for 128 ints (512 bytes);
+	int* free_blocks = malloc(MAP_ENTRIES);
+
+	if (free_blocks == NULL) {
+		printf("Malloc failed for free block vector!\n");
+		return NULL;
+	}
+
+	// Open the disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return NULL;
+	}
+
+	// Free block vector is always the second block
+	block_offset = BLOCK_SIZE;
+
+	// Move cursor to top of free block vector block
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Read vector from disk
+	fread(free_blocks, sizeof(free_blocks), 1, vdisk);
+
+	// Close the disk
+	close_fs();
+
+	return free_blocks;
+}
+
+int write_free_blocks(int* free_blocks)
+{
+	int block_offset;
+
+	// Open disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return 1;
+	}
+
+	// Free block vector is always the second block
+	block_offset = BLOCK_SIZE;
+
+	// Move cursor to top of vector block
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Write vector to disk
+	fwrite(free_blocks, sizeof(free_blocks), 1, vdisk);
+
+	// Clean up
+	free(free_blocks);
+	close_fs();
+
+	return 0;
+}
+
 int* get_inode_map()
 {
 	int block_offset;
@@ -91,7 +201,6 @@ int write_inode_map(int* map)
 	close_fs();
 
 	return 0;
-
 }
 
 inode* get_inode(int inode_num)
@@ -178,16 +287,6 @@ int write_inode(inode* node)
 	return 0;
 }
 
-int write_fs()
-{
-	return 0;
-}
-
-int read_fs()
-{
-	return 0;
-}
-
 int init_root()
 {
 	// Get root inode
@@ -220,6 +319,35 @@ int init_root()
 		printf("Problems writing inode map to disk!\n");
 		return 1;
 	}
+
+	/* START TEST CODE */
+
+	// TESTING FREEBLOCKS
+	int *fb = get_free_blocks();
+
+	if (TestBit(fb, 11) == 1) {
+		ClearBit(fb, 11);
+	} else {
+		printf("Bad\n");
+		return 1;
+	}
+
+	if (write_free_blocks(fb) != 0) {
+		printf ("more bad\n");
+		return 1;
+	}
+
+	// TESTING SUPERBLOCK
+	superblock *sb = get_superblock();
+
+	sb->first_free_block++;
+
+	if (write_superblock(sb) != 0) {
+		printf("sb bad\n");
+		return 1;
+	}
+
+	/* END TEST CODE */
 
 	return 0;
 }
@@ -260,9 +388,9 @@ int init_fs(char *fs_path, int num_blocks)
 	// Fill free blocks
 	// 0 = unavailable, 1 = available
 	int i;
-	for (i = 0; i < 4096; i++) {
+	for (i = 0; i < NUM_BLOCKS; i++) {
 		// Fill inode map with 1s
-		if (i < 112) {
+		if (i < MAX_FILES) {
 			SetBit(inode_map, i);
 		} else {
 			ClearBit(inode_map, i);
@@ -283,7 +411,7 @@ int init_fs(char *fs_path, int num_blocks)
 
 	// Create inode blocks with inodes
 	int j;
-	for (j = 0; j < 112; j++) {
+	for (j = 0; j < MAX_FILES; j++) {
 		// Create inode block
 		inode *node = (inode *)malloc(INODE_SIZE);
 

@@ -102,6 +102,6 @@ void ClearBit(int A[], int k)
 
 int TestBit(int A[], int k)
 {
-	return ( (A[k/32] & ((1 << (k%32)) != 0) ) );
+	return ( (A[k/32] & (1 << (k%32) )) != 0 );
 }
 
