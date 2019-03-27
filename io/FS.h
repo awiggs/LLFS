@@ -14,6 +14,7 @@
 #define DIRENTRY_SIZE 16 // bytes
 #define MAGIC_NUM 0x2f8c8075
 #define MAX_FILES 112 // based on 7 blocks of inodes
+#define MAP_ENTRIES 128
 #define VDISK_PATH "../disk/vdisk"
 
 FILE *vdisk; // used for opening vdisk
@@ -54,7 +55,7 @@ typedef struct fs_sb {
 	char padding[BLOCK_SIZE - (sizeof(int) * 9)];
 } superblock;
 
-typedef struct fs_inode {
+typedef struct inode {
 	// inode num
 	int inode_num;
 

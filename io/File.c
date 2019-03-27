@@ -36,6 +36,64 @@ void close_fs(void)
 	}
 }
 
+int* get_inode_map()
+{
+	int block_offset;
+
+	// Set up array for 128 ints (512 bytes)
+	int* map = malloc(MAP_ENTRIES);
+
+	if (map == NULL) {
+		printf("Malloc failed for get inode map!\n");
+		return NULL;
+	}
+
+	// Open the disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return NULL;
+	}
+
+	// inode map is always the third block
+	block_offset = 2 * BLOCK_SIZE;
+	
+	// Move cursor to top of map block
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Read map from disk
+	fread(map, sizeof(map), 1, vdisk);
+
+	// Close the disk
+	close_fs();
+
+	return map;
+}
+
+int write_inode_map(int* map)
+{
+	int block_offset;
+
+	// Open disk
+	if (open_fs(VDISK_PATH) != 0) {
+		return 1;
+	}
+
+	// inode map is always the third block
+	block_offset = 2 * BLOCK_SIZE;
+
+	// Move cursor to top of map block
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Write map to disk
+	fwrite(map, sizeof(map), 1, vdisk);
+
+	// Clean up
+	free(map);
+	close_fs();
+
+	return 0;
+
+}
+
 inode* get_inode(int inode_num)
 {
 	inode* ret;
@@ -69,6 +127,11 @@ inode* get_inode(int inode_num)
 	// Create a return inode
 	ret = (inode *)malloc(INODE_SIZE);
 
+	if (ret == NULL) {
+		printf("Malloc for getting inode failed!\n");
+		return NULL;
+	}
+
 	// Grab bytes from disk
 	memcpy(ret, &buffer[inode_offset * INODE_SIZE], INODE_SIZE);	
 
@@ -82,19 +145,35 @@ inode* get_inode(int inode_num)
 
 int write_inode(inode* node)
 {
-	int inode_num, ;
+	int inode_num, block_number, block_offset, inode_offset;
 
 	// Get inode num to write back to disk
 	inode_num = node->inode_num;
 
 	// Open the disk
 	if (open_fs(VDISK_PATH) != 0) {
-		return NULL;
+		return 1;
 	}
 
 	// Get block number to write inode back to
-	block_number
+	block_number = 3 + (inode_num / (BLOCK_SIZE / INODE_SIZE));
+	block_offset = (block_number * BLOCK_SIZE);
 
+	// Move cursor to top of inode block
+	fseek(vdisk, block_offset, SEEK_SET);
+
+	// Calculate inode offset
+	inode_offset = inode_num % (BLOCK_SIZE / INODE_SIZE);
+
+	// Move cursor to top of inode
+	fseek(vdisk, (inode_offset * INODE_SIZE), SEEK_CUR);
+
+	// Write inode into disk
+	fwrite(node, 1, INODE_SIZE, vdisk);
+
+	// Clean up
+	free(node);
+	close_fs();
 
 	return 0;
 }
@@ -111,9 +190,36 @@ int read_fs()
 
 int init_root()
 {
+	// Get root inode
 	inode *root_inode = get_inode(0);
+
+	// Updat inode for root dir
 	root_inode->filesize = 1;
 	root_inode->directory_flag = 1;
+
+	// Write root node inode back to disk
+	if (write_inode(root_inode) == 1) {
+		printf("Problems writing inode to disk!\n");
+		return 1;
+	}
+
+	// Get inode map to check for availability
+	int *map = get_inode_map();
+
+	if (TestBit(map, 0) == 1) {
+		// First inode is available
+		// Set it to 0 to mark as used
+		ClearBit(map, 0);
+	} else {
+		printf("Root inode is unavailable!\n");
+		return 1;
+	}
+
+	// Write inode map back to disk
+	if (write_inode_map(map) != 0) {
+		printf("Problems writing inode map to disk!\n");
+		return 1;
+	}
 
 	return 0;
 }
@@ -133,6 +239,12 @@ int init_fs(char *fs_path, int num_blocks)
 
 	// Create Superblock
 	sb = (superblock *)malloc(sizeof(superblock));
+
+	if (sb == NULL) {
+		printf("Malloc for superblock failed!\n");
+		return 1;
+	}
+
 	sb->magic = MAGIC_NUM;
 	sb->block_count = num_blocks;
 	sb->max_files = MAX_FILES;
@@ -142,8 +254,8 @@ int init_fs(char *fs_path, int num_blocks)
 
 	// Create block vector mapping
 	// Helper files found in separate header
-	int free_blocks[128]; // 512 bytes, int = 4 bytes, a[i] = 32 bit flags
-	int inode_map[128];
+	int free_blocks[MAP_ENTRIES]; // 512 bytes, int = 4 bytes, a[i] = 32 bit flags
+	int inode_map[MAP_ENTRIES];
 
 	// Fill free blocks
 	// 0 = unavailable, 1 = available
@@ -173,7 +285,12 @@ int init_fs(char *fs_path, int num_blocks)
 	int j;
 	for (j = 0; j < 112; j++) {
 		// Create inode block
-		inode* node = (inode *)malloc(INODE_SIZE);
+		inode *node = (inode *)malloc(INODE_SIZE);
+
+		if (node == NULL) {
+			printf("Malloc for inode failed!\n");
+			return 1;
+		}	
 
 		// Fill inode with default info
 		node->inode_num = j;
