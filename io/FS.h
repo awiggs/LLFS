@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/*****************************************************/
+/****************************************/
 
 // FS Globals and Defines
 
@@ -19,8 +19,12 @@
 
 FILE *vdisk; // used for opening vdisk
 
-/*****************************************************/
+/****************************************/
+// Open/Close disk functions
+int open_fs(char* fs_path);
+void close_fs(void);
 
+/****************************************/
 // FS Structs
 
 typedef struct fs_sb {
@@ -68,18 +72,20 @@ typedef struct inode {
 	// Pointers to data blocks
 	short block_pointers[10];
 	short indirect_pointer;
-
 } inode;
 
 typedef struct fs_db {
-	// Pointers to next blocks
-	int next_free;
-	int prev_free;
-
 	// Size of block left
-	char data[BLOCK_SIZE - (sizeof(int) * 2)];
-	
+	char data[BLOCK_SIZE];
 } block;
+
+typedef struct fs_dir_block {
+	// Next directory slot (up to 15?)
+	int next_slot;
+	
+	// Padding to make block 512 Bytes
+	//char padding[BLOCK_SIZE - (sizeof(int) * 1)];
+} dir_block;
 
 typedef struct direntry {
 	// Dir name
@@ -89,19 +95,4 @@ typedef struct direntry {
 	int inode_num;
 } direntry;
 
-/*********************************************/
-void SetBit(int A[], int k)
-{
-	A[k/32] |= 1 << (k%32);
-}
-
-void ClearBit(int A[], int k)
-{
-	A[k/32] &= ~(1 << (k%32));
-}
-
-int TestBit(int A[], int k)
-{
-	return ( (A[k/32] & (1 << (k%32) )) != 0 );
-}
-
+/****************************************/
