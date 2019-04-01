@@ -43,7 +43,7 @@ void close_fs(void)
 
 int init_root()
 {
-	int block_offset, dir_offset;
+	int block_offset;
 
 	// Get superblock
 	superblock *sb = get_superblock();
@@ -96,18 +96,23 @@ int init_root()
 
 	// Write free blocks back to disk
 	if (write_free_blocks(fb) != 0) {
-		printf ("more bad\n");
+		printf ("Problem writing free block vector to disk!\n");
 		return 1;
 	}
 
 	// Create block for root directory
-	dir_block *root_block = (dir_block *)malloc(BLOCK_SIZE);
-	root_block->next_slot = 123;
+	block *root_block = (block *)malloc(sizeof(block));
 
-	// Store first dir entry as itself
+	// Create root direntry
 	direntry *root_entry = (direntry *)malloc(sizeof(direntry));
-	root_entry->inode_num = sb->first_free_inode;
-	strcpy(root_entry->name, (char*)"Hello");
+
+	// Initialize details of root direntry
+	memset(root_entry->name, 0, sizeof(root_entry->name));
+	root_entry->inode_num = 0;
+	strcpy(root_entry->name, (char*)"/");
+
+	// Write direntry into block
+	memcpy(root_block->data, root_entry, sizeof(direntry));
 
 	// Write root block (512B) to disk (empty)
 	block_offset = (sb->first_free_block - 1) * BLOCK_SIZE;
@@ -117,16 +122,14 @@ int init_root()
 		return 1;
 	}
 
-	// Write root direntry at start of root block
-	dir_offset = ((root_block->next_slot) * DIRENTRY_SIZE);
-
-	printf("TEST ONLY: %d\n", dir_offset);
+	// Clean up root
+	free(root_entry);
+	free(root_block);
 
 	// Update superblock
 	sb->first_free_inode++;
 	sb->first_free_block++;
 	sb->used_blocks++;
-	
 
 	if (write_superblock(sb) != 0) {
 		printf("Problems writing superblock to disk!\n");
@@ -134,15 +137,14 @@ int init_root()
 		return 1;
 	}
 
-	// Clean up
-	free(root_entry);
-	free(root_block);
-
 	return 0;
 }
 
 int init_fs(char *fs_path, int num_blocks)
 {
+	// Note: init_fs does NOT use generic functions as defined
+	// in Controller.h, it initializes the disk on its own
+
 	printf("Formatting disk...\n");
 	superblock *sb;
 

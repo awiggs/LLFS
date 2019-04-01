@@ -11,7 +11,7 @@
 
 void* block_read(int offset)
 {
-	void* buffer = malloc(BLOCK_SIZE);
+	void* buffer = malloc(sizeof(block));
 
 	// Open disk
 	if (open_fs(VDISK_PATH) != 0) {
@@ -58,7 +58,7 @@ superblock* get_superblock()
 	superblock* sb;
 
 	// Set up superblock struct
-	sb = (superblock *)malloc(BLOCK_SIZE);
+	sb = (superblock *)malloc(sizeof(block));
 
 	// Superblock is always the first block
 	block_offset = 0;
@@ -237,6 +237,41 @@ int write_inode(inode* node)
 
 	return 0;
 }
+
+/****************************************/
+// Directory functions
+
+//int create_dir(int inode_num)
+//{
+//	int block_number;
+//
+//	// Allocate new block
+////	block new_block = (block*)malloc(BLOCK_SIZE);
+//
+//	// Get superblock
+//	superblock* sb = (superblock *)malloc(BLOCK_SIZE);
+//	sb = get_superblock();
+//
+//	// Fill with 16 byte dir entries
+//	int i;
+//	for (i = 0; i < (BLOCK_SIZE / DIRENTRY_SIZE); i++) {
+//		// Create entries
+//		direntry e = (direntry*)malloc(DIRENTRY_SIZE);
+//		e->inode_num = -1;
+//		e->name = "EMPTY";
+//
+//		// Write to next free block space on disk
+//		
+//
+//	}
+//
+//	// Write to next free spot on disk
+//
+//	// Update new block number
+//
+//	// Return block number
+//	return block_number;
+//}
 
 /****************************************/
 // Bit manipulation for maps

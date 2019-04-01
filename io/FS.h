@@ -74,18 +74,10 @@ typedef struct inode {
 	short indirect_pointer;
 } inode;
 
-typedef struct fs_db {
-	// Size of block left
+typedef struct block {
+	// Size of block, 512 bytes
 	char data[BLOCK_SIZE];
 } block;
-
-typedef struct fs_dir_block {
-	// Next directory slot (up to 15?)
-	int next_slot;
-	
-	// Padding to make block 512 Bytes
-	//char padding[BLOCK_SIZE - (sizeof(int) * 1)];
-} dir_block;
 
 typedef struct direntry {
 	// Dir name
