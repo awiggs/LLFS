@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "FS.h"
+#include "Controller.h"
 
 /****************************************/
 // Basic disk functions
@@ -60,6 +61,11 @@ superblock* get_superblock()
 	// Set up superblock struct
 	sb = (superblock *)malloc(sizeof(block));
 
+	if (sb == NULL) {
+		printf("Problems with malloc for superblock!\n");
+		return NULL;
+	}
+
 	// Superblock is always the first block
 	block_offset = 0;
 
@@ -76,9 +82,10 @@ int write_superblock(superblock* sb)
 	// Superblock is always the first block
 	block_offset = 0;
 
-	// Read superblock from disk
+	// Write superblock to disk
 	if (block_write(sb, block_offset, BLOCK_SIZE) != 0) {
 		printf("Problem writing superblock!\n");
+		return 1;
 	}
 
 	// Clean up
@@ -172,6 +179,54 @@ int write_inode_map(int* map)
 	return 0;
 }
 
+int set_inode_map(int k)
+{
+	int *map;
+
+	// Get map
+	map = get_inode_map();
+
+	// Check bit: 1 = available slot
+	if (TestBit(map, k) == 1) {
+		ClearBit(map, k);
+	} else {
+		printf("Inode already set in map!\n");
+		return 1;
+	}
+
+	// Write map back to disk
+	if (write_inode_map(map) != 0) {
+		printf("Problems writing inode map to disk!\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+int clear_inode_map(int k)
+{
+	int *map;
+
+	// Get map
+	map = get_inode_map();
+
+	// Check bit: 0 = unavailable slot
+	if (TestBit(map, k) == 0) {
+		SetBit(map, k);
+	} else {
+		printf("Inode map bit already cleared!\n");
+		return 1;
+	}
+
+	// Write map back to disk
+	if (write_inode_map(map) != 0) {
+		printf("Problems writing inode map to disk!\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 /****************************************/
 // Read/Write inodes
 
@@ -230,11 +285,25 @@ int write_inode(inode* node)
 
 	if (block_write(node, (block_offset + (inode_offset * INODE_SIZE)), INODE_SIZE) != 0) {
 		printf("Shit went bad\n");
+		return 1;
 	}
 
 	// Clean up
 	free(node);
 
+	return 0;
+}
+
+int path_to_inode(char* path)
+{
+	if (!path) {
+		return -1;
+	}
+	if (strlen(path) == 0 || strcmp(path, "/") == 0) {
+		return 0;
+	}
+
+	// TODO: other directory paths
 	return 0;
 }
 

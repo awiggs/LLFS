@@ -1,7 +1,7 @@
 // File for basic disk controls
 
 /****************************************/
-char* block_read(int offset);
+void* block_read(int offset);
 int block_write(void* block, int offset, int block_size);
 
 /****************************************/
@@ -15,10 +15,13 @@ int write_free_blocks(int* free_blocks);
 /****************************************/
 int* get_inode_map();
 int write_inode_map(int* map);
+int set_inode_map(int k);
+int clear_inode_map(int k);
 
 /****************************************/
 inode* get_inode(int inode_num);
 int write_inode(inode* node);
+int path_to_inode(char* path);
 
 /****************************************/
 void SetBit(int A[], int k);

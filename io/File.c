@@ -37,6 +37,167 @@ void close_fs(void)
 
 /****************************************/
 // TODO: File System functions (file create, etc.)
+int mkdir(int inode_num, char* name)
+{
+	// Create a new block for the directory
+	block *dir_block = (block*)malloc(sizeof(block));
+
+	if (dir_block == NULL) {
+		printf("Problem with malloc for dir block!\n");
+		return 1;
+	}
+
+	// Get superblock
+	superblock *sb = (superblock *)malloc(sizeof(block));
+	sb = get_superblock();
+
+	// TODO
+
+	// Clean up
+	free(sb);
+
+	return 0;
+}
+
+int create_file(char* path)
+{
+	int i, j, path_length, slash_index, inode_num, block_number, map_update;
+	int parent_dir_block, block_offset, parent_offset, dirents;
+	char *new_path;
+	char filename[12];
+	inode *path_node;
+	inode *new_inode;
+	superblock *sb;
+	block *new_block;
+	block *parent_block;
+	direntry *parent_entry;
+
+	// Get file name from end of path
+	path_length = strlen(path);
+	for (i = 0; i < path_length; i++) {
+		if (path[i] == '/') {
+			slash_index = i;
+		}
+	}
+
+	new_path = strdup(path);
+	new_path[slash_index] = '\0';
+
+	memcpy(filename, &new_path[slash_index + 1], 12);
+
+	printf("slash index: %d\n", slash_index);
+
+	// Get inode for path
+	inode_num = path_to_inode(new_path);
+	path_node = get_inode(inode_num);
+
+	// Update path node
+	path_node->filesize += 16;
+	int x;
+	for (x = 0; x < 10; x++) {
+		printf("inode pointer %d: %d\n", x, path_node->block_pointers[x]);
+	}
+
+	// Get next available inode for the file
+	sb = get_superblock();
+	new_inode = get_inode(sb->first_free_inode);
+	new_inode->directory_flag = 0;
+
+	// Get block to use for the file
+	new_block = (block *)malloc(sizeof(block));
+	memset(new_block->data, 0, sizeof(new_block->data));
+	block_number = sb->first_free_block;	
+
+	// TODO: write contents to the new block
+
+	// Write new block back to disk
+	block_offset = (block_number - 1) * BLOCK_SIZE;
+	if (block_write(new_block, block_offset, BLOCK_SIZE) != 0) {
+		printf("Problems writing new block back to disk!\n");
+		free(new_block);
+		free(sb);
+		return 1;
+	}
+	
+	// Add block number to inode's points
+	memset(new_inode->block_pointers, 0, sizeof(new_inode->block_pointers));
+	for (j = 0; j < 10; j++) {
+		printf("inode bp at %d: %d\n", j, new_inode->block_pointers[j]);
+		if (new_inode->block_pointers[j] == 0) {
+			new_inode->block_pointers[j] = block_number;
+			printf("inode bp at %d: %d\n", j, new_inode->block_pointers[j]);
+			break;
+		}
+	}
+
+	// Write new inode to disk
+	if (write_inode(new_inode) != 0) {
+		printf("Problems writing new inode to disk!\n");
+		free(new_inode);
+		free(sb);
+		return 1;
+	}
+
+	// TODO: Update free block vector
+	
+	
+	// Update inode map vector
+	map_update = set_inode_map(sb->first_free_inode);	
+	if (map_update != 0) {
+		// Problems
+		return 1;
+	}
+
+	// Add directory entry to parent block
+	// TODO: make this more robust
+	parent_dir_block = path_node->block_pointers[0];
+	parent_offset = (parent_dir_block - 1) * BLOCK_SIZE;
+	parent_block = block_read(parent_offset);
+	
+	// SIMPLE CHECK FOR NOW
+	parent_entry = (direntry *)malloc(sizeof(direntry));
+	memset(parent_entry->name, 0, sizeof(parent_entry->name));
+	parent_entry->inode_num = sb->first_free_inode;
+	strcpy(parent_entry->name, filename);
+
+	// Get number of directory entries in the parent block
+	dirents = path_node->filesize / 16;
+
+	memcpy(&parent_block->data[dirents * 16], parent_entry, sizeof(direntry));
+
+	// Write path inode back to disk
+	if (write_inode(path_node) != 0) {
+		printf("Problems writing path inode back to disk!\n");
+		free(path_node);
+		free(parent_block);
+		return 1;
+	}
+
+	// Write parent block back to disk
+	if (block_write(parent_block, parent_offset, BLOCK_SIZE) != 0) {
+		printf("Problem writing parent block back to disk!\n");
+		return 1;
+	}
+
+	// Update Superblock
+	sb->first_free_block++;
+	sb->first_free_inode++;
+	sb->used_blocks++;
+
+	// Clean up
+	free(new_block);
+	free(parent_block);
+	free(parent_entry);
+
+	// Write Superblock back to disk
+	if(write_superblock(sb) != 0) {
+		printf("Problems writing superblock to disk!\n");
+		free(sb);
+		return 1;
+	}
+
+	return 0;
+}
 
 /****************************************/
 // Init functions
@@ -74,8 +235,8 @@ int init_root()
 	// Updat inode for root dir
 	root_inode->inode_num = sb->first_free_inode;
 	root_inode->directory_flag = 1;
-	root_inode->filesize = 1000;
-	root_inode->block_pointers[0] = 123;
+	root_inode->filesize = 0;
+	root_inode->block_pointers[0] = sb->first_free_block;
 
 	// Write root node inode back to disk
 	if (write_inode(root_inode) != 0) {
@@ -107,6 +268,7 @@ int init_root()
 	direntry *root_entry = (direntry *)malloc(sizeof(direntry));
 
 	// Initialize details of root direntry
+	memset(root_block, 0, sizeof(block));
 	memset(root_entry->name, 0, sizeof(root_entry->name));
 	root_entry->inode_num = 0;
 	strcpy(root_entry->name, (char*)"/");
@@ -252,6 +414,12 @@ int main()
 	}
 
 	init_root();
+
+	create_file("/file.txt");
+	create_file("/test.c");
+	create_file("/boop.txt");
+	create_file("/number1.txt");
+	create_file("/number2.txt");
 
 	// Open vdisk for use
 //	open_fs(FS_PATH);
