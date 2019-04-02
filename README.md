@@ -1,9 +1,9 @@
-# Little Log File System
+# Simple File System
 ### UVic CSC 360, Spring 2019
 
-This directory is for the CSC 360 Assignment of a Little Log File System.
+This directory is for the CSC 360 Assignment of a ~Little Log File System~ Simple File System.
 
-Also it's not actually LFS :)
+Note: an LFS proved difficult for the time constraints of the assignment so a simple Unix-like FS was made instead.
 
 
 Resources:\
