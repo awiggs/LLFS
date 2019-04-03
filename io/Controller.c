@@ -12,12 +12,12 @@
 
 void* block_read(int offset)
 {
-	void* buffer = malloc(sizeof(block));
-
 	// Open disk
 	if (open_fs(VDISK_PATH) != 0) {
 		return NULL;
 	}
+	
+	void* buffer = malloc(sizeof(block));
 
 	// Move cursor to top of block
 	fseek(vdisk, offset, SEEK_SET);
@@ -133,6 +133,54 @@ int write_free_blocks(int* free_blocks)
 
 	// Clean up
 	free(free_blocks);
+
+	return 0;
+}
+
+int set_block_vector(int k)
+{
+	int *bv;
+
+	// Get block vector
+	bv = get_free_blocks();
+
+	// Check bit: 1 = available slot
+	if (TestBit(bv, k) == 1) {
+		ClearBit(bv, k);
+	} else {
+		printf("Block vector item is already set!\n");
+		return 1;
+	}
+
+	// Write block vector back to disk
+	if (write_free_blocks(bv) != 0) {
+		printf("Problems writing block vector to disk!\n");
+		return 1;
+	}
+
+	return 0;
+}
+
+int clear_block_vector(int k)
+{
+	int *bv;
+
+	// Get block vector
+	bv = get_free_blocks();
+
+	// Check bit: 0 = unavailable slot
+	if (TestBit(bv, k) == 0) {
+		SetBit(bv, k);
+	} else {
+		printf("Block vector item is already cleared!\n");
+		return 1;
+	}
+
+	// Write block vector back to disk
+	if (write_free_blocks(bv) != 0) {
+		printf("Problems writing block vector to disk!\n");
+		return 1;
+	}
 
 	return 0;
 }

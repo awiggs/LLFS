@@ -37,30 +37,183 @@ void close_fs(void)
 
 /****************************************/
 // TODO: File System functions (file create, etc.)
-int mkdir(int inode_num, char* name)
+int mkdir(char* path)
 {
-	// Create a new block for the directory
-	block *dir_block = (block*)malloc(sizeof(block));
+	int i, token_counter, entry_offset, block_number, block_offset, root_offset;
+	const char d[2] = "/";
+	char *copy;
+	char *token;
+	inode *root_inode, *new_inode;
+	superblock *sb;
+	block *root_block, *new_block;
+	direntry *new_entry;
 
-	if (dir_block == NULL) {
-		printf("Problem with malloc for dir block!\n");
-		return 1;
+	// Parse path to get tokens
+	copy = strdup(path);
+	token = strtok(copy, d);
+	token_counter = 0;
+
+	// Get number of tokens
+	while (token != NULL) {
+		token_counter++;
+		printf("counter + token: %d %s\n", token_counter, token);
+		token = strtok(NULL, d);
 	}
 
-	// Get superblock
-	superblock *sb = (superblock *)malloc(sizeof(block));
-	sb = get_superblock();
+	// Store tokens into an array
+	char *tokens[token_counter];
+	char *copy2 = strdup(path);
+	i = 0;
+	tokens[i] = strtok(copy2, d);
+	while (tokens[i] != NULL) {
+		tokens[++i] = strtok(NULL, d);
+	}
 
-	// TODO
+	// If only one token, just create the new dir in the root
+	if (token_counter == 1) {
+		printf("only one token! %s\n", tokens[0]);
 
-	// Clean up
-	free(sb);
+		// Get root inode
+		root_inode = get_inode(0);		
+
+		// Get root dir block
+		root_block = (block *)block_read((root_inode->block_pointers[0] - 1) * BLOCK_SIZE);
+
+		if (root_block == NULL) {
+			printf("Problems reading root dir block!\n");
+			return 1;
+		}
+
+		// Get Superblock
+		sb = get_superblock();
+
+		// Create new dir block
+		new_block = (block *)malloc(sizeof(block));
+
+		if (new_block == NULL) {
+			printf("Problems with new block malloc!\n");
+			free(root_inode);
+			free(root_block);
+			free(sb);
+			return 1;
+		}
+
+		memset(new_block->data, 0, sizeof(new_block->data));
+		block_number = sb->first_free_block;
+
+		// Write new block to disk
+		block_offset = (block_number - 1) * BLOCK_SIZE;
+		if (block_write(new_block, block_offset, BLOCK_SIZE) != 0) {
+			printf("Problems writing new block to disk!\n");
+			free(new_block);
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+		
+		free(new_block);
+
+		// Create new inode + init
+		new_inode = get_inode(sb->first_free_inode);
+		new_inode->directory_flag = 1;
+		new_inode->filesize = 0;
+		memset(new_inode->block_pointers, 0, sizeof(new_inode->block_pointers));
+		new_inode->block_pointers[0] = block_number;
+
+		// Write new inode back to disk
+		if (write_inode(new_inode) != 0) {
+			printf("Problems writing new inode to disk!\n");
+			free(new_inode);
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		// Add entry to root dir block
+		new_entry = (direntry *)malloc(sizeof(direntry));
+
+		if (new_entry == NULL) {
+			printf("Problems with new entry malloc!\n");
+			free(new_inode);
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		new_entry->inode_num = sb->first_free_inode;
+		memset(new_entry->name, 0, sizeof(new_entry->name));
+		strcpy(new_entry->name, tokens[0]);
+
+		entry_offset = root_inode->filesize / 16;
+		printf("%d\n", entry_offset);
+		memcpy(&root_block->data[entry_offset * 16], new_entry, sizeof(direntry));
+
+		root_offset = (root_inode->block_pointers[0] - 1) * BLOCK_SIZE;
+
+		// Write root block back to disk
+		if (block_write(root_block, root_offset, BLOCK_SIZE) != 0) {
+			printf("Problem writing root block back to disk!\n");
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		free(root_block);
+
+		// Update + write root inode
+		root_inode->filesize += 16;
+		if (write_inode(root_inode) != 0) {
+			// Problems
+			free(sb);
+			free(root_inode);
+			return 1;
+		}
+	
+		// Update inode map
+		if (set_inode_map(sb->first_free_inode) != 0) {
+			// Problems
+			free(sb);
+			return 1;
+		}
+
+		// Update block vector
+		if (set_block_vector(sb->first_free_block) != 0) {
+			// Problems
+			free(sb);
+			return 1;
+		}
+		
+		// Update Superblock
+		sb->first_free_inode++;
+		sb->first_free_block++;
+		sb->used_blocks++;
+
+		// Write Superblock
+		if (write_superblock(sb) != 0) {
+			// Problems
+			free(sb);
+			return 1;
+		}
+
+	} else {
+		// TODO: There's multiple tokens, yikes
+		printf("multiple tokens :(\n");
+	}
 
 	return 0;
 }
 
 int create_file(char* path)
 {
+	/*
+	* Essentially a 'touch' function currently
+	* Creates a new empty file (in the ROOT dir only currently)
+	*/
+
 	int i, j, path_length, slash_index, inode_num, block_number, map_update;
 	int parent_dir_block, block_offset, parent_offset, dirents;
 	char *new_path;
@@ -71,6 +224,12 @@ int create_file(char* path)
 	block *new_block;
 	block *parent_block;
 	direntry *parent_entry;
+	
+	// Check for no parameter passed
+	if (!path) {
+		printf("No path passed to create file!\n");
+		return 1;
+	}
 
 	// Get file name from end of path
 	path_length = strlen(path);
@@ -79,13 +238,9 @@ int create_file(char* path)
 			slash_index = i;
 		}
 	}
-
 	new_path = strdup(path);
 	new_path[slash_index] = '\0';
-
 	memcpy(filename, &new_path[slash_index + 1], 12);
-
-	printf("slash index: %d\n", slash_index);
 
 	// Get inode for path
 	inode_num = path_to_inode(new_path);
@@ -93,10 +248,6 @@ int create_file(char* path)
 
 	// Update path node
 	path_node->filesize += 16;
-	int x;
-	for (x = 0; x < 10; x++) {
-		printf("inode pointer %d: %d\n", x, path_node->block_pointers[x]);
-	}
 
 	// Get next available inode for the file
 	sb = get_superblock();
@@ -118,14 +269,15 @@ int create_file(char* path)
 		free(sb);
 		return 1;
 	}
+
+	// Clean up
+	free(new_block);
 	
 	// Add block number to inode's points
 	memset(new_inode->block_pointers, 0, sizeof(new_inode->block_pointers));
 	for (j = 0; j < 10; j++) {
-		printf("inode bp at %d: %d\n", j, new_inode->block_pointers[j]);
 		if (new_inode->block_pointers[j] == 0) {
 			new_inode->block_pointers[j] = block_number;
-			printf("inode bp at %d: %d\n", j, new_inode->block_pointers[j]);
 			break;
 		}
 	}
@@ -138,8 +290,12 @@ int create_file(char* path)
 		return 1;
 	}
 
-	// TODO: Update free block vector
-	
+	// Update block vector
+	if (set_block_vector(sb->first_free_block) != 0) {
+		// Problems
+		free(sb);
+		return 1;
+	}
 	
 	// Update inode map vector
 	map_update = set_inode_map(sb->first_free_inode);	
@@ -161,9 +317,10 @@ int create_file(char* path)
 	strcpy(parent_entry->name, filename);
 
 	// Get number of directory entries in the parent block
-	dirents = path_node->filesize / 16;
+	dirents = path_node->filesize / DIRENTRY_SIZE;
 
-	memcpy(&parent_block->data[dirents * 16], parent_entry, sizeof(direntry));
+	// Add direntry to the dir block
+	memcpy(&parent_block->data[dirents * DIRENTRY_SIZE], parent_entry, sizeof(direntry));
 
 	// Write path inode back to disk
 	if (write_inode(path_node) != 0) {
@@ -185,7 +342,6 @@ int create_file(char* path)
 	sb->used_blocks++;
 
 	// Clean up
-	free(new_block);
 	free(parent_block);
 	free(parent_entry);
 
@@ -195,6 +351,8 @@ int create_file(char* path)
 		free(sb);
 		return 1;
 	}
+
+	printf("File %s created!\n", filename);
 
 	return 0;
 }
@@ -235,7 +393,7 @@ int init_root()
 	// Updat inode for root dir
 	root_inode->inode_num = sb->first_free_inode;
 	root_inode->directory_flag = 1;
-	root_inode->filesize = 0;
+	root_inode->filesize = 16; // Has its own entry as default for root
 	root_inode->block_pointers[0] = sb->first_free_block;
 
 	// Write root node inode back to disk
@@ -415,20 +573,16 @@ int main()
 
 	init_root();
 
-	create_file("/file.txt");
-	create_file("/test.c");
-	create_file("/boop.txt");
-	create_file("/number1.txt");
-	create_file("/number2.txt");
+//	create_file("/file.txt");
+//	create_file("/test.c");
+//	create_file("/boop.txt");
+//	create_file("/number1.txt");
+//	create_file("/number2.txt");
 
-	// Open vdisk for use
-//	open_fs(FS_PATH);
 
-	// Do stuff
-//	test_fs();
-
-	// Close vdisk
-//	close_fs();
+	mkdir("/usr/");
+	mkdir("/tmp");
+	mkdir("/var/");
 
 	return 0;
 }

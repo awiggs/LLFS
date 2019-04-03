@@ -11,6 +11,8 @@ int write_superblock(superblock* sb);
 /****************************************/
 int* get_free_blocks();
 int write_free_blocks(int* free_blocks);
+int set_block_vector(int k);
+int clear_block_vector(int k);
 
 /****************************************/
 int* get_inode_map();
