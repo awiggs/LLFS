@@ -402,7 +402,7 @@ int path_to_inode(char* path)
 			return -1;
 		}
 
-		// Get number of direntries in parent b lock
+		// Get number of direntries in parent block
 		entries = parent_inode->filesize / DIRENTRY_SIZE;
 
 		// Search for token name in each direntry

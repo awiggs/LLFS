@@ -37,7 +37,122 @@ void close_fs(void)
 
 /****************************************/
 // TODO: File System functions (file create, etc.)
-int mkdir(char* path)
+int read_file(char *path)
+{
+	// Path = path to read file from on FS
+	char *contents;
+	int filesize;
+	int inode_num, block_offset;
+	inode *path_inode;
+	block *path_block;
+
+	// Get inode of specified file
+	inode_num = path_to_inode(path);
+
+	if (inode_num < 0) {
+		// Problems
+		return 1;
+	}
+	
+	path_inode = get_inode(inode_num);
+
+	// Get filesize
+	filesize = path_inode->filesize;
+	contents = malloc(filesize + 1);
+	
+	// Get block
+	block_offset = (path_inode->block_pointers[0] - 1) * BLOCK_SIZE;
+	path_block = (block *)block_read(block_offset);
+
+	// Get contents of block
+	memcpy(contents, &path_block->data, filesize);
+
+	// Print contents of the file to command line
+	printf("Contents:\n%s\n", contents);
+
+	// Clean up
+	free(path_block);
+	free(contents);
+	free(path_inode);
+
+	return 0;
+}
+
+int write_file(char *file, char *path)
+{
+	// File = file to be read from host machine
+	// Path = path to write the file to
+	FILE *host;
+	char *contents;
+	long host_size;
+	int inode_num, block_offset;
+	inode *path_inode;
+	block *path_block;
+
+	// Open file from (real) disk
+	host = fopen(file, "rb");
+	fseek(host, 0, SEEK_END);
+
+	// Ensure proper sizing before reading
+	host_size = ftell(host);
+	rewind(host);
+
+	// Read file into memory
+	contents = malloc(host_size + 1);
+	fread(contents, 1, host_size, host);
+	fclose(host);
+
+	// Null termination
+	contents[host_size] = 0;
+
+	// Get inode we need to write to
+	inode_num = path_to_inode(path);
+
+	if (inode_num < 0) {
+		// Problems
+		free(contents);
+		return 1;
+	}
+	
+	path_inode = get_inode(inode_num);
+
+	// Get block to write to
+	block_offset = (path_inode->block_pointers[0] - 1) * BLOCK_SIZE;
+	path_block = (block *)block_read(block_offset);
+
+	if (path_block == NULL) {
+		// Problems
+		free(contents);
+		free(path_inode);
+		return 1;
+	}
+
+	// Write contents to block
+	memcpy(&path_block->data, contents, host_size);
+	free(contents);
+
+	// Write block back to disk
+	if (block_write(path_block, block_offset, BLOCK_SIZE) != 0) {
+		// Problems
+		free(path_block);
+		free(path_inode);
+		return 1;
+	}
+
+	free(path_block);
+
+	// Update + write inode
+	path_inode->filesize += host_size;
+	if (write_inode(path_inode) != 0) {
+		// Problems
+		free(path_inode);
+		return 1;
+	}
+
+	return 0;
+}
+
+int mkdir(char *path)
 {
 	int i, token_counter, entry_offset, block_number, block_offset, root_offset;
 	const char d[2] = "/";
@@ -246,9 +361,6 @@ int create_file(char* path)
 	inode_num = path_to_inode(new_path);
 	path_node = get_inode(inode_num);
 
-	// Update path node
-	path_node->filesize += 16;
-
 	// Get next available inode for the file
 	sb = get_superblock();
 	new_inode = get_inode(sb->first_free_inode);
@@ -323,6 +435,7 @@ int create_file(char* path)
 	memcpy(&parent_block->data[dirents * DIRENTRY_SIZE], parent_entry, sizeof(direntry));
 
 	// Write path inode back to disk
+	path_node->filesize += 16;
 	if (write_inode(path_node) != 0) {
 		printf("Problems writing path inode back to disk!\n");
 		free(path_node);
@@ -573,7 +686,7 @@ int main()
 
 	init_root();
 
-	create_file("/file.txt");
+//	create_file("/file.txt");
 //	create_file("/test.c");
 //	create_file("/boop.txt");
 //	create_file("/number1.txt");
@@ -583,9 +696,12 @@ int main()
 	mkdir("/usr");
 	mkdir("/usr/Andrew/");
 	mkdir("/usr/Andrew/Documents/");
-	mkdir("/usr/test/temp");
 
-	create_file("/usr/Andrew/Documents/foo.txt");
+	create_file("/usr/Andrew/Documents/Test.txt");
+
+	write_file("Test.txt", "/usr/Andrew/Documents/Test.txt");
+
+	read_file("/usr/Andrew/Documents/Test.txt");
 
 	return 0;
 }
