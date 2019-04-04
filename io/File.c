@@ -56,7 +56,6 @@ int mkdir(char* path)
 	// Get number of tokens
 	while (token != NULL) {
 		token_counter++;
-		printf("counter + token: %d %s\n", token_counter, token);
 		token = strtok(NULL, d);
 	}
 
@@ -71,7 +70,6 @@ int mkdir(char* path)
 
 	// If only one token, just create the new dir in the root
 	if (token_counter == 1) {
-		printf("only one token! %s\n", tokens[0]);
 
 		// Get root inode
 		root_inode = get_inode(0);		
@@ -81,6 +79,7 @@ int mkdir(char* path)
 
 		if (root_block == NULL) {
 			printf("Problems reading root dir block!\n");
+			free(root_inode);
 			return 1;
 		}
 
@@ -148,7 +147,6 @@ int mkdir(char* path)
 		strcpy(new_entry->name, tokens[0]);
 
 		entry_offset = root_inode->filesize / 16;
-		printf("%d\n", entry_offset);
 		memcpy(&root_block->data[entry_offset * 16], new_entry, sizeof(direntry));
 
 		root_offset = (root_inode->block_pointers[0] - 1) * BLOCK_SIZE;
@@ -200,9 +198,181 @@ int mkdir(char* path)
 		}
 
 	} else {
-		// TODO: There's multiple tokens, yikes
-		printf("multiple tokens :(\n");
+		// Handles multiple path tokens
+
+		int j, k, found_inode, entry_num, found_next;
+
+		for (j = 0; j < token_counter; j++) {
+			token = tokens[j];
+
+			if (j == 0) {
+				// Get root dir block
+				root_inode = get_inode(0);
+			} else {
+				// Get next token dir block
+				root_inode = get_inode(found_inode);
+			}
+
+			// TODO: add block pointer for loop here (multiple dir blocks)
+
+			root_block = (block *)block_read((root_inode->block_pointers[0] - 1) * BLOCK_SIZE);
+
+			if (root_block == NULL) {
+				printf("Problems reading root dir block!\n");
+				free(root_inode);
+				return 1;
+			}
+
+			// Get number of direntries in root block
+			entry_num = root_inode->filesize / DIRENTRY_SIZE;
+
+			// Search for token name in each direntry
+			new_entry = (direntry *)malloc(sizeof(direntry));
+
+			for (k = 0; k < entry_num; k++) {
+				
+				// Extract each direntry
+				memcpy(new_entry, &root_block->data[sizeof(direntry) * k], sizeof(direntry));
+
+				if (strcmp(new_entry->name, token) == 0) {
+					found_inode = new_entry->inode_num;
+					found_next = 1;
+					break;
+				}
+			}
+
+
+			if (found_next == 0 && j != (token_counter - 1)) {
+				printf("Directory \"%s\" doesn't exist!\n", token);
+				return 1;
+			}
+
+			// Clean up
+			found_next = 0;
+			free(new_entry);
+
+			// Save root if on the last iteration
+			if (j != (token_counter - 1)) {
+				free(root_block);
+				free(root_inode);
+			}
+		}
+		// Should have final directory to make the new one in
+
+		// Get Superblock
+		sb = get_superblock();
+
+		// Make new block
+		new_block = (block *)malloc(sizeof(block));
+
+		if (new_block == NULL) {
+			printf("Problems with new block malloc!\n");
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		memset(new_block->data, 0, sizeof(new_block->data));
+		block_number = sb->first_free_block;
+
+		// Write new block to disk
+		block_offset = (block_number - 1) * BLOCK_SIZE;
+		if (block_write(new_block, block_offset, BLOCK_SIZE) != 0) {
+			printf("Problems writing new block to disk!\n");
+			free(new_block);
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		free(new_block);
+
+		// Make new inode
+		new_inode = get_inode(sb->first_free_inode);
+		new_inode->directory_flag = 1;
+		new_inode->filesize = 0;
+		memset(new_inode->block_pointers, 0, sizeof(new_inode->block_pointers));
+		new_inode->block_pointers[0] = block_number;
+
+		if (write_inode(new_inode) != 0) {
+			printf("Problems writing new inode to disk!\n");
+			free(new_inode);
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		// Add entry to parent dir block
+		new_entry = (direntry *)malloc(sizeof(direntry));
+
+		if (new_entry == NULL) {
+			printf("Problems with new entry malloc!\n");
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+		
+		new_entry->inode_num = sb->first_free_inode;
+		memset(new_entry->name, 0, sizeof(new_entry->name));
+		strcpy(new_entry->name, tokens[token_counter-1]);
+
+		entry_offset = root_inode->filesize / DIRENTRY_SIZE;
+		memcpy(&root_block->data[entry_offset * DIRENTRY_SIZE], new_entry, sizeof(direntry));
+
+		root_offset = (root_inode->block_pointers[0] - 1) * BLOCK_SIZE;
+
+		// Write block to disk
+		if (block_write(root_block, root_offset, BLOCK_SIZE) != 0) {
+			printf("Problems writing root block back to disk!\n");
+			free(root_block);
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+		
+		free(root_block);
+
+		// Update + write root inode
+		root_inode->filesize += 16;
+		if (write_inode(root_inode) != 0) {
+			// Problems
+			free(root_inode);
+			free(sb);
+			return 1;
+		}
+
+		// Update block vector
+		if (set_block_vector(sb->first_free_block) != 0) {
+			// Problems
+			free(sb);
+			return 1;
+		}
+
+		// Update inode map
+		if (set_inode_map(sb->first_free_inode) != 0) {
+			// Problems
+			free(sb);
+			return 1;
+		}
+
+		// Update Superblock
+		sb->first_free_inode++;
+		sb->first_free_block++;
+		sb->used_blocks++;
+
+		// Write Superblock
+		if (write_superblock(sb) != 0) {
+			// Problems
+			free(sb);
+			return 1;
+		}
 	}
+
+	printf("Directory \"%s\" added!\n", tokens[token_counter - 1]);
 
 	return 0;
 }
@@ -579,10 +749,11 @@ int main()
 //	create_file("/number1.txt");
 //	create_file("/number2.txt");
 
-
-	mkdir("/usr/");
-	mkdir("/tmp");
+	
+	mkdir("/usr");
 	mkdir("/var/");
+	mkdir("/usr/Andrew/");
+	mkdir("/usr/test/temp");
 
 	return 0;
 }

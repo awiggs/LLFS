@@ -5,6 +5,9 @@ This directory is for the CSC 360 Assignment of a ~Little Log File System~ Simpl
 
 Note: an LFS proved difficult for the time constraints of the assignment so a simple Unix-like FS was made instead.
 
+Trade-offs:
+1. No searching through multiple block pointers -- not enough time to implement
+
 
 Resources:\
 Link for Bit Map functions:
