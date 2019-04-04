@@ -573,7 +573,7 @@ int main()
 
 	init_root();
 
-//	create_file("/file.txt");
+	create_file("/file.txt");
 //	create_file("/test.c");
 //	create_file("/boop.txt");
 //	create_file("/number1.txt");
@@ -584,6 +584,8 @@ int main()
 	mkdir("/usr/Andrew/");
 	mkdir("/usr/Andrew/Documents/");
 	mkdir("/usr/test/temp");
+
+	create_file("/usr/Andrew/Documents/foo.txt");
 
 	return 0;
 }
