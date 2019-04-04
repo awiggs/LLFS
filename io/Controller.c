@@ -344,6 +344,15 @@ int write_inode(inode* node)
 
 int path_to_inode(char* path)
 {
+	const char d[2] = "/";
+	int token_counter, j, k, entries, found_inode, found_next;
+	int i = 0;
+	char *token;
+	char *copy;
+	direntry *entry;
+	block *parent_block;
+	inode *parent_inode;
+
 	if (!path) {
 		return -1;
 	}
@@ -352,43 +361,79 @@ int path_to_inode(char* path)
 	}
 
 	// TODO: other directory paths
-	return 0;
+	
+	// Get number of path tokens
+	copy = strdup(path);
+	token = strtok(copy, d);
+	token_counter = 0;
+
+	while (token != NULL) {
+		token_counter++;
+		token = strtok(NULL, d);
+	}
+
+	// Store tokens in an array
+	char *tokens[token_counter];
+	char *copy2 = strdup(path);
+	tokens[i] = strtok(copy2, d);
+	while (tokens[i] != NULL) {
+		tokens[++i] = strtok(NULL, d);
+	}
+
+	// Find inode num at end of path
+	for (j = 0; j < token_counter; j++) {
+		// Get new token
+		token = tokens[j];
+
+		// Root?
+		if (j == 0) {
+			parent_inode = get_inode(0);
+		} else {
+			parent_inode = get_inode(found_inode);
+		}
+
+		// Get parent block
+		parent_block = (block *)block_read((parent_inode->block_pointers[0] - 1) * BLOCK_SIZE);
+
+		if (parent_block == NULL) {
+			// Problems
+			printf("Error reading parent block!\n");
+			free(parent_inode);
+			return -1;
+		}
+
+		// Get number of direntries in parent b lock
+		entries = parent_inode->filesize / DIRENTRY_SIZE;
+
+		// Search for token name in each direntry
+		entry = (direntry *)malloc(sizeof(direntry));
+
+		for (k = 0; k < entries; k++) {
+			// Extract direntry
+			memcpy(entry, &parent_block->data[sizeof(direntry) * k], sizeof(direntry));
+
+			if (strcmp(entry->name, token) == 0) {
+				found_inode = entry->inode_num;
+				found_next = 1;
+				break;
+			}
+		}
+
+		// Make sure we didn't not find a directory
+		if (found_next == 0 && j != (token_counter - 1)) {
+			printf("Directory \"%s\" doesn't exist!\n", token);
+			return -1;
+		}
+
+		// Clean up
+		found_next = 0;
+		free(entry);
+		free(parent_block);
+		free(parent_inode);
+	}
+
+	return found_inode;
 }
-
-/****************************************/
-// Directory functions
-
-//int create_dir(int inode_num)
-//{
-//	int block_number;
-//
-//	// Allocate new block
-////	block new_block = (block*)malloc(BLOCK_SIZE);
-//
-//	// Get superblock
-//	superblock* sb = (superblock *)malloc(BLOCK_SIZE);
-//	sb = get_superblock();
-//
-//	// Fill with 16 byte dir entries
-//	int i;
-//	for (i = 0; i < (BLOCK_SIZE / DIRENTRY_SIZE); i++) {
-//		// Create entries
-//		direntry e = (direntry*)malloc(DIRENTRY_SIZE);
-//		e->inode_num = -1;
-//		e->name = "EMPTY";
-//
-//		// Write to next free block space on disk
-//		
-//
-//	}
-//
-//	// Write to next free spot on disk
-//
-//	// Update new block number
-//
-//	// Return block number
-//	return block_number;
-//}
 
 /****************************************/
 // Bit manipulation for maps
