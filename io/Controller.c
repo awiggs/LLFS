@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "FS.h"
+#include "Config.h"
 #include "Controller.h"
 
 /****************************************/
@@ -90,6 +90,38 @@ int write_superblock(superblock* sb)
 
 	// Clean up
 	free(sb);
+
+	return 0;
+}
+
+int update_first_free(superblock* sb)
+{
+	int ffb, ffi, i;
+	int *map, *bv;
+
+	// Get first free block
+	bv = get_free_blocks();
+	for (i = 0; i < NUM_BLOCKS; i++) {
+		if (TestBit(bv, i) == 1) {
+			ffb = i;
+			break;
+		}
+	}
+	free(bv);
+
+	// Get first free inode
+	map = get_inode_map();
+	for (i = 0; i < NUM_BLOCKS; i++) {
+		if (TestBit(map, i) == 1) {
+			ffi = i;
+			break;
+		}
+	}
+	free(map);
+
+	// Update Superblock
+	sb->first_free_block = ffb;
+	sb->first_free_inode = ffi;
 
 	return 0;
 }
@@ -360,8 +392,6 @@ int path_to_inode(char* path)
 		return 0;
 	}
 
-	// TODO: other directory paths
-	
 	// Get number of path tokens
 	copy = strdup(path);
 	token = strtok(copy, d);

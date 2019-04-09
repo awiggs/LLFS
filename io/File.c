@@ -4,7 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "FS.h"
+#include "Config.h"
+#include "File.h"
 #include "Controller.h"
 
 /****************************************/
@@ -91,6 +92,10 @@ int write_file(char *file, char *path)
 
 	// Open file from (real) disk
 	host = fopen(file, "rb");
+	if (!host) {
+		printf("Could not open file!\n");
+		return 1;
+	}
 	fseek(host, 0, SEEK_END);
 
 	// Ensure proper sizing before reading
@@ -306,8 +311,10 @@ int mkdir(char *path)
 	}
 		
 	// Update Superblock
-	sb->first_free_inode++;
-	sb->first_free_block++;
+	//sb->first_free_inode++;
+	//sb->first_free_block++;
+	int test = update_first_free(sb);
+	if (test != 0) return 1;
 	sb->used_blocks++;
 
 	// Write Superblock
@@ -370,8 +377,6 @@ int create_file(char* path)
 	new_block = (block *)malloc(sizeof(block));
 	memset(new_block->data, 0, sizeof(new_block->data));
 	block_number = sb->first_free_block;	
-
-	// TODO: write contents to the new block
 
 	// Write new block back to disk
 	block_offset = (block_number - 1) * BLOCK_SIZE;
@@ -450,8 +455,8 @@ int create_file(char* path)
 	}
 
 	// Update Superblock
-	sb->first_free_block++;
-	sb->first_free_inode++;
+	int test = update_first_free(sb);
+	if (test != 0) return 1;
 	sb->used_blocks++;
 
 	// Clean up
@@ -465,9 +470,180 @@ int create_file(char* path)
 		return 1;
 	}
 
-	printf("File %s created!\n", filename);
+	printf("File \"%s\" created!\n", filename);
 
 	return 0;
+}
+
+int delete(char* path)
+{
+	int i, path_inode, block_num, num_blocks, updated, data_length;
+	int path_length, slash_index, pinode, k, entries, found_entry, pblocks;
+	char *ppath;
+	char entry_name[12];
+	inode *node, *pnode;
+	block *dblock;
+	superblock *sb;
+	direntry *entry;
+
+	// Get inode num for end of path item
+	path_inode = path_to_inode(path);
+
+	if (path_inode < 0) {
+		return 1;
+	}
+
+	// Get inode
+	node = get_inode(path_inode);
+
+	// Check if empty
+	if (node->filesize > 0 && node->directory_flag == 1) { // Non-empty
+		printf("Cannot delete item that isn't empty.\n");
+		free(node);
+		return 1;
+	} else { // Empty
+		// Get block(s)
+		num_blocks = node->filesize / BLOCK_SIZE;
+		for (i = 0; i < num_blocks + 1; i++) {
+			// Get block num
+			block_num = node->block_pointers[i];
+
+			// Get block
+			dblock = (block *)block_read((block_num - 1) * BLOCK_SIZE);
+
+			if (dblock == NULL) {
+				printf("Problems reading block!\n");
+				free(dblock);
+				free(node);
+				return 1;
+			}
+
+			// Set the block's mem to 0s
+			data_length = strlen(dblock->data);
+			memset(dblock->data, 0, BLOCK_SIZE);
+			data_length = strlen(dblock->data);
+
+			// Write block back to disk
+			if (block_write(dblock, (block_num - 1) * BLOCK_SIZE, BLOCK_SIZE) != 0) {
+				printf("Problems writing block back to disk!\n");
+				free(dblock);
+				free(node);
+				return 1;
+			}
+
+			free(dblock);
+
+			// Remove pointer from node
+			node->block_pointers[i] = 0;
+
+			// Update node filesize
+			node->filesize -= data_length;
+
+			// Update Free Block Vector
+			if (clear_block_vector(block_num) != 0) {
+				// Problems
+				free(node);
+				return 1;
+			}
+
+			// Get + update + write Superblock
+			sb = get_superblock();
+			updated = update_first_free(sb);
+			if (updated != 0) {
+				// Problems
+				free(node);
+				free(sb);
+				return 1;
+			}
+			sb->used_blocks--;
+			if (write_superblock(sb) != 0) {
+				printf("Problems writing Superblock!\n");
+				free(node);
+				free(sb);
+				return 1;
+			}
+
+			// Update parent
+			path_length = strlen(path);
+			for (i = 0; i < path_length; i++) {
+				if (path[i] == '/' && (i != (path_length - 1))) {
+					slash_index = i;
+				}
+			}
+			ppath = strdup(path);
+			ppath[slash_index] = '\0';
+			memcpy(entry_name, &ppath[slash_index + 1], 12);
+
+			// Check for slash at end of dir name
+			if (entry_name[strlen(entry_name) - 1] == '/') {
+				entry_name[strlen(entry_name) - 1] = '\0';
+			}
+
+			// Get parent inode
+			pinode = path_to_inode(ppath);
+			pnode = get_inode(pinode);
+
+			// Search through dir blocks to find direntry to delete
+			pblocks = pnode->filesize / BLOCK_SIZE;
+			entries = pnode->filesize / DIRENTRY_SIZE; 
+			for (i = 0; i <= pblocks; i++) {
+				// Get block
+				block_num = pnode->block_pointers[i];
+				dblock = (block *)block_read((block_num - 1) * BLOCK_SIZE);
+
+				// Search through entries
+				for (k = 0; k < entries; k++) {
+					// Extract direntry
+					entry = (direntry *)malloc(sizeof(direntry));
+					memcpy(entry, &dblock->data[sizeof(direntry) * k], sizeof(direntry));
+
+					if (strcmp(entry->name, entry_name) == 0) {
+						// Found it, so remove it from mem
+						memset(&dblock->data[sizeof(direntry) * k], 0, sizeof(direntry));
+						found_entry = 1;
+						free(entry);
+						break;
+					}
+					free(entry);
+				}
+
+
+				if (found_entry == 1) {
+					// Write block back to disk
+					if (block_write(dblock, (block_num - 1) * BLOCK_SIZE, BLOCK_SIZE) != 0) {
+						// Problems
+						printf("Problems writing dblock back to disk!\n");
+						free(entry);
+						free(dblock);
+						free(pnode);
+						return 1;
+					}
+					free(dblock);
+					break;
+				}
+			}
+
+			free(pnode);
+
+			printf("\"%s\" deleted!\n", entry_name);
+		}
+
+		// Update inode map
+		if (clear_inode_map(path_inode) != 0) {
+			// Problems
+			free(node);
+			return 1;
+		}
+
+		// Clean up
+		free(node);
+
+
+		return 0;
+	}
+
+	return 0;
+
 }
 
 /****************************************/
@@ -560,8 +736,10 @@ int init_root()
 	free(root_block);
 
 	// Update superblock
-	sb->first_free_inode++;
-	sb->first_free_block++;
+	//sb->first_free_inode++;
+	//sb->first_free_block++;
+	int test = update_first_free(sb);
+	if (test != 0) return 1;
 	sb->used_blocks++;
 
 	if (write_superblock(sb) != 0) {
@@ -601,7 +779,7 @@ int init_fs(char *fs_path, int num_blocks)
 	sb->block_count = num_blocks;
 	sb->max_files = MAX_FILES;
 	sb->first_free_inode = 0;
-	sb->first_free_block = 11;
+	sb->first_free_block = 10;
 	sb->current_files = 0;
 
 	// Create block vector mapping
@@ -665,43 +843,3 @@ int init_fs(char *fs_path, int num_blocks)
 
 /*****************************************************/
 
-int test_fs()
-{
-	// Use this for testing the file system
-	return 0;
-}
-
-/*****************************************************/
-
-int main()
-{
-	char *FS_PATH = VDISK_PATH;
-
-	// Initialize vdisk
-	int start = init_fs(FS_PATH, NUM_BLOCKS);
-
-	if (start == 1) {
-		fprintf(stderr, "Error starting file system!\n");
-	}
-
-	init_root();
-
-//	create_file("/file.txt");
-//	create_file("/test.c");
-//	create_file("/boop.txt");
-//	create_file("/number1.txt");
-//	create_file("/number2.txt");
-
-	
-	mkdir("/usr");
-	mkdir("/usr/Andrew/");
-	mkdir("/usr/Andrew/Documents/");
-
-	create_file("/usr/Andrew/Documents/Test.txt");
-
-	write_file("Test.txt", "/usr/Andrew/Documents/Test.txt");
-
-	read_file("/usr/Andrew/Documents/Test.txt");
-
-	return 0;
-}

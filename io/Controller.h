@@ -7,6 +7,7 @@ int block_write(void* block, int offset, int block_size);
 /****************************************/
 superblock* get_superblock();
 int write_superblock(superblock* sb);
+int update_first_free(superblock* sb);
 
 /****************************************/
 int* get_free_blocks();
