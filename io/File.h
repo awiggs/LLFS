@@ -11,6 +11,7 @@ int read_file(char*);
 int write_file(char*, char*);
 int mkdir(char*);
 int create_file(char*);
+int delete(char*);
 int init_fs(char*, int);
 int init_root();
 

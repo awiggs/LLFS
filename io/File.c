@@ -601,6 +601,7 @@ int delete(char* path)
 						// Found it, so remove it from mem
 						memset(&dblock->data[sizeof(direntry) * k], 0, sizeof(direntry));
 						found_entry = 1;
+						pnode->filesize -= DIRENTRY_SIZE;
 						free(entry);
 						break;
 					}
@@ -623,7 +624,13 @@ int delete(char* path)
 				}
 			}
 
-			free(pnode);
+			// Write pnode back to disk
+			if (write_inode(pnode) != 0) {
+				printf("Problems writing pnode back to disk!\n");
+				free(pnode);
+				free(node);
+				return 1;
+			}
 
 			printf("\"%s\" deleted!\n", entry_name);
 		}
